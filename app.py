@@ -2,7 +2,7 @@ from flask import Flask, render_template, request, Response
 from docxtpl import DocxTemplate
 import json
 import os
-import subprocess
+import pypandoc
 from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
@@ -35,8 +35,8 @@ def generate_document(template_file, json_data):
     # Save the rendered docx document
     doc.save(output_docx_path)
 
-    # Use subprocess to call pandoc for converting docx to PDF (cross-platform)
-    subprocess.run(['pandoc', output_docx_path, '-o', output_pdf_path])
+    # Convert DOCX to PDF using pypandoc
+    pypandoc.convert_file(output_docx_path, 'pdf', outputfile=output_pdf_path)
 
     # Read the generated PDF file
     with open(output_pdf_path, 'rb') as f:
@@ -64,5 +64,6 @@ def generate_doc_route():
     
     return generate_document(template_file, json_data)
 
+
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(host='0.0.0.0', port=5000, debug=True)
