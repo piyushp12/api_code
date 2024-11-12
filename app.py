@@ -1,38 +1,64 @@
 from flask import Flask, render_template, request, Response
 from docxtpl import DocxTemplate
-from docx2pdf import convert
 import json
 import os
-import pythoncom
+import subprocess
 from werkzeug.utils import secure_filename
+import logging
 
 app = Flask(__name__)
 
 os.makedirs('uploads', exist_ok=True)
 os.makedirs('outputs', exist_ok=True)
 
+logging.basicConfig(level=logging.DEBUG)
+
 @app.route('/')
 def index():
     return render_template('index.html')  
+
+def convert_docx_to_pdf(docx_file, pdf_output):
+    """Converts a .docx file to .pdf using unoconv"""
+    try:
+        subprocess.run(['unoconv', '-f', 'pdf', '-o', pdf_output, docx_file], check=True)
+        logging.info(f"Successfully converted {docx_file} to {pdf_output}")
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Error converting DOCX to PDF: {e}")
+        raise ValueError("Error converting DOCX to PDF.")
+
 
 def generate_document(template_file, json_data):
     template_filename = secure_filename(template_file.filename)
     template_path = os.path.join('uploads', template_filename)
     template_file.save(template_path)
 
-    data = json.loads(json_data)
+    try:
+        data = json.loads(json_data)
+    except json.JSONDecodeError as e:
+        logging.error(f"JSON decoding error: {e}")
+        return {"error": "Invalid JSON data."}, 400
 
-    doc = DocxTemplate(template_path)
-    doc.render(data)
-    
+    try:
+        doc = DocxTemplate(template_path)
+        doc.render(data)
+    except Exception as e:
+        logging.error(f"Error rendering DOCX template: {e}")
+        return {"error": "Error rendering DOCX template."}, 500
+
     output_docx_path = os.path.join('outputs', "output.docx")
     output_pdf_path = os.path.join('outputs', "output.pdf")
     
-    doc.save(output_docx_path)
+    try:
+        doc.save(output_docx_path)
+    except Exception as e:
+        logging.error(f"Error saving DOCX file: {e}")
+        return {"error": "Error saving generated DOCX file."}, 500
 
-    pythoncom.CoInitialize()
-
-    convert(output_docx_path, output_pdf_path)
+    # Convert the generated .docx to .pdf
+    try:
+        convert_docx_to_pdf(output_docx_path, output_pdf_path)
+    except ValueError as e:
+        return {"error": str(e)}, 500
 
     with open(output_pdf_path, 'rb') as f:
         file_data = f.read()
