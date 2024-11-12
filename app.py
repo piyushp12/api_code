@@ -1,76 +1,33 @@
-from flask import Flask, render_template, request, Response
-from flask_cors import CORS, cross_origin
+from flask import Flask, request, send_file, jsonify
+from flask_cors import CORS
 from docxtpl import DocxTemplate
 import json
-import os
-import pypandoc
-from werkzeug.utils import secure_filename
+from io import BytesIO
 
 app = Flask(__name__)
+CORS(app)  # Enable CORS for all routes
 
-# Enable CORS for the entire app
-CORS(app)
-
-# Ensure necessary directories exist
-os.makedirs('uploads', exist_ok=True)
-os.makedirs('outputs', exist_ok=True)
-
-@app.route('/')
-def index():
-    return render_template('index.html')
-
-def generate_document(template_file, json_data):
-    # Save uploaded template file to 'uploads' folder
-    template_filename = secure_filename(template_file.filename)
-    template_path = os.path.join('uploads', template_filename)
-    template_file.save(template_path)
-
-    # Try parsing the incoming JSON data
+@app.route('/generate-docx', methods=['POST'])
+def generate_docx():
     try:
-        data = json.loads(json_data)
-    except json.JSONDecodeError as e:
-        return {"error": "Invalid JSON data provided. Please check the data format."}, 400
+        if 'template' not in request.files or 'data' not in request.files:
+            return jsonify({"error": "Template and JSON data are required."}), 400
 
-    # Initialize the template and render it with the data
-    doc = DocxTemplate(template_path)
-    doc.render(data)
+        template_file = request.files['template']
+        json_data_file = request.files['data']
+        data = json.load(json_data_file)
 
-    # Paths for the saved docx and PDF output
-    output_docx_path = os.path.join('outputs', "output.docx")
-    output_pdf_path = os.path.join('outputs', "output.pdf")
+        template = DocxTemplate(template_file)
+        template.render(data)
 
-    # Save the rendered docx document
-    doc.save(output_docx_path)
+        output = BytesIO()
+        template.save(output)
+        output.seek(0)
 
-    # Convert DOCX to PDF using pypandoc with LaTeX as PDF engine
-    pypandoc.convert_file(output_docx_path, 'pdf', outputfile=output_pdf_path, extra_args=['--pdf-engine=pdflatex'])
+        return send_file(output, as_attachment=True, download_name="Filled_Template.docx")
 
-    # Read the generated PDF file
-    with open(output_pdf_path, 'rb') as f:
-        file_data = f.read()
-
-    # Clean up temporary files
-    os.remove(output_pdf_path)
-    os.remove(output_docx_path)
-    os.remove(template_path)
-
-    # Return the PDF as a response for download
-    response = Response(file_data, mimetype="application/pdf")
-    response.headers.set("Content-Disposition", "attachment", filename="output.pdf")
-    
-    return response
-
-@app.route('/generate-doc', methods=['POST'])
-@cross_origin()  # Enable CORS for this specific route
-def generate_doc_route():
-    # Ensure both template and data are provided
-    if 'template' not in request.files or 'data' not in request.form:
-        return {"error": "Please provide both 'template' and 'data' in form-data."}, 400
-    
-    template_file = request.files['template']
-    json_data = request.form['data']
-    
-    return generate_document(template_file, json_data)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
