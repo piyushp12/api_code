@@ -1,4 +1,5 @@
 from flask import Flask, render_template, request, Response
+from flask_cors import CORS, cross_origin
 from docxtpl import DocxTemplate
 import json
 import os
@@ -6,6 +7,9 @@ import pypandoc
 from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
+
+# Enable CORS for the entire app
+CORS(app)
 
 # Ensure necessary directories exist
 os.makedirs('uploads', exist_ok=True)
@@ -57,6 +61,7 @@ def generate_document(template_file, json_data):
     return response
 
 @app.route('/generate-doc', methods=['POST'])
+@cross_origin()  # Enable CORS for this specific route
 def generate_doc_route():
     # Ensure both template and data are provided
     if 'template' not in request.files or 'data' not in request.form:
@@ -66,7 +71,6 @@ def generate_doc_route():
     json_data = request.form['data']
     
     return generate_document(template_file, json_data)
-
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
