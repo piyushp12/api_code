@@ -35,8 +35,8 @@ def generate_document(template_file, json_data):
     # Save the rendered docx document
     doc.save(output_docx_path)
 
-    # Convert DOCX to PDF using pypandoc with wkhtmltopdf engine
-    pypandoc.convert_file(output_docx_path, 'pdf', outputfile=output_pdf_path, extra_args=['--pdf-engine=wkhtmltopdf'])
+    # Convert DOCX to PDF using pypandoc with LaTeX as PDF engine
+    pypandoc.convert_file(output_docx_path, 'pdf', outputfile=output_pdf_path, extra_args=['--pdf-engine=pdflatex'])
 
     # Read the generated PDF file
     with open(output_pdf_path, 'rb') as f:
@@ -63,5 +63,10 @@ def generate_doc_route():
     json_data = request.form['data']
     
     return generate_document(template_file, json_data)
+
+if __name__ == '__main__':
+    app.run(debug=True)
+
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
