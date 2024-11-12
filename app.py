@@ -13,7 +13,7 @@ os.makedirs('outputs', exist_ok=True)
 
 @app.route('/')
 def index():
-    return render_template('index.html')  
+    return render_template('index.html')
 
 def generate_document(template_file, json_data):
     # Save uploaded template file to 'uploads' folder
@@ -21,8 +21,11 @@ def generate_document(template_file, json_data):
     template_path = os.path.join('uploads', template_filename)
     template_file.save(template_path)
 
-    # Parse the incoming JSON data
-    data = json.loads(json_data)
+    # Try parsing the incoming JSON data
+    try:
+        data = json.loads(json_data)
+    except json.JSONDecodeError as e:
+        return {"error": "Invalid JSON data provided. Please check the data format."}, 400
 
     # Initialize the template and render it with the data
     doc = DocxTemplate(template_path)
