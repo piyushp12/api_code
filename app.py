@@ -4,11 +4,27 @@ from docxtpl import DocxTemplate
 import json
 from io import BytesIO
 import tempfile
-import pypandoc
-from docx import Document
+import subprocess
+import re
+import sys
+import os
 
 app = Flask(__name__)
 CORS(app)
+
+
+def convert_to(folder, source, timeout=None):
+    args = [libreoffice_exec(), '--headless', '--convert-to', 'pdf', '--outdir', folder, source]
+    process = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout)
+    filename = re.search(r'-> (.*?) using filter', process.stdout.decode())
+    return filename.group(1) if filename else None
+
+def libreoffice_exec():
+    if sys.platform == 'darwin':  
+        return '/Applications/LibreOffice.app/Contents/MacOS/soffice'
+    elif sys.platform == 'win32': 
+        return r'C:\Program Files\LibreOffice\program\soffice.exe' 
+    return 'libreoffice' 
 
 def generate_document(template_file, data, doc_type):
     template = DocxTemplate(template_file)
@@ -22,24 +38,20 @@ def generate_document(template_file, data, doc_type):
         with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as temp_docx_file:
             temp_docx_file.write(output.getvalue())
             temp_docx_path = temp_docx_file.name
-        
-        # Convert docx to pdf using pypandoc (ensure pandoc is installed)
-        try:
-            pdf_io = BytesIO()
-            output_pdf_path = temp_docx_path.replace('.docx', '.pdf')
-            
-            # pypandoc command to convert .docx to .pdf
-            pypandoc.convert_file(temp_docx_path, 'pdf', outputfile=output_pdf_path)
-            
-            with open(output_pdf_path, 'rb') as pdf_file:
-                pdf_io.write(pdf_file.read())
-            pdf_io.seek(0)
 
-            return pdf_io, 'application/pdf', 'output.pdf'
-        except Exception as e:
-            raise Exception(f"Error during PDF conversion: {str(e)}")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            pdf_filename = convert_to(temp_dir, temp_docx_path)
+            if pdf_filename:
+                pdf_path = os.path.join(temp_dir, pdf_filename)  
+                with open(pdf_path, 'rb') as pdf_file:
+                    pdf_io = BytesIO(pdf_file.read())
+                pdf_io.seek(0)
+                return pdf_io, 'application/pdf', 'output.pdf'
+            else:
+                raise Exception("PDF conversion failed.")
     else:
         return output, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'output.docx'
+
 
 @app.route('/generate-docx', methods=['POST'])
 def generate_docx():
