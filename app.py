@@ -4,7 +4,7 @@ from docxtpl import DocxTemplate
 import json
 from io import BytesIO
 import tempfile
-from docx2pdf import convert
+import pypandoc
 from docx import Document
 
 app = Flask(__name__)
@@ -23,17 +23,21 @@ def generate_document(template_file, data, doc_type):
             temp_docx_file.write(output.getvalue())
             temp_docx_path = temp_docx_file.name
         
-        pdf_io = BytesIO()
-        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as temp_pdf_file:
-            temp_pdf_path = temp_pdf_file.name
+        # Convert docx to pdf using pypandoc (ensure pandoc is installed)
+        try:
+            pdf_io = BytesIO()
+            output_pdf_path = temp_docx_path.replace('.docx', '.pdf')
+            
+            # pypandoc command to convert .docx to .pdf
+            pypandoc.convert_file(temp_docx_path, 'pdf', outputfile=output_pdf_path)
+            
+            with open(output_pdf_path, 'rb') as pdf_file:
+                pdf_io.write(pdf_file.read())
+            pdf_io.seek(0)
 
-        convert(temp_docx_path, temp_pdf_path)
-        
-        with open(temp_pdf_path, 'rb') as pdf_file:
-            pdf_io.write(pdf_file.read())
-        pdf_io.seek(0)
-
-        return pdf_io, 'application/pdf', 'output.pdf'
+            return pdf_io, 'application/pdf', 'output.pdf'
+        except Exception as e:
+            raise Exception(f"Error during PDF conversion: {str(e)}")
     else:
         return output, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'output.docx'
 
