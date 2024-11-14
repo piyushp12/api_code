@@ -1,6 +1,7 @@
 from flask import Flask, request, send_file, jsonify
 from flask_cors import CORS
 from docxtpl import DocxTemplate
+from docx import Document
 import json
 from io import BytesIO
 import tempfile
@@ -8,10 +9,19 @@ import subprocess
 import re
 import sys
 import os
+import jinja2  
 
 app = Flask(__name__)
 CORS(app)
 
+def validate_template(template_path):
+    doc = Document(template_path)
+    template_content = "\n".join([p.text for p in doc.paragraphs])
+
+    for_loops = re.findall(r'{%\s*for\b', template_content)
+    end_for_loops = re.findall(r'{%\s*endfor\b', template_content)
+    if len(for_loops) != len(end_for_loops):
+        raise ValueError("Template syntax error: Mismatched '{% for %}' and '{% endfor %}' tags.")
 
 def convert_to(folder, source, timeout=None):
     args = [libreoffice_exec(), '--headless', '--convert-to', 'pdf', '--outdir', folder, source]
@@ -24,11 +34,18 @@ def libreoffice_exec():
         return '/Applications/LibreOffice.app/Contents/MacOS/soffice'
     elif sys.platform == 'win32': 
         return r'C:\Program Files\LibreOffice\program\soffice.exe' 
-    return 'libreoffice' 
+    return 'libreoffice'
 
 def generate_document(template_file, data, doc_type):
+    validate_template(template_file)  
+
     template = DocxTemplate(template_file)
-    template.render(data)
+    try:
+        template.render(data)  
+    except jinja2.TemplateSyntaxError as e:
+        raise ValueError(f"Template syntax error: {e.message}")
+    except jinja2.UndefinedError as e:
+        raise ValueError(f"Template error: Undefined variable encountered - {e.message}")
 
     output = BytesIO()
     template.save(output)
@@ -52,7 +69,6 @@ def generate_document(template_file, data, doc_type):
     else:
         return output, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'output.docx'
 
-
 @app.route('/generate-docx', methods=['POST'])
 def generate_docx():
     try:
@@ -75,6 +91,8 @@ def generate_docx():
         file_io, mimetype, filename = generate_document(template_file, data, doc_type)
         return send_file(file_io, as_attachment=True, download_name=filename, mimetype=mimetype)
 
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
