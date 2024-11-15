@@ -9,7 +9,8 @@ import subprocess
 import re
 import sys
 import os
-import jinja2  
+import jinja2
+import base64
 
 app = Flask(__name__)
 CORS(app)
@@ -37,11 +38,11 @@ def libreoffice_exec():
     return 'libreoffice'
 
 def generate_document(template_file, data, doc_type):
-    validate_template(template_file)  
+    validate_template(template_file)
 
     template = DocxTemplate(template_file)
     try:
-        template.render(data)  
+        template.render(data)
     except jinja2.TemplateSyntaxError as e:
         raise ValueError(f"Template syntax error: {e.message}")
     except jinja2.UndefinedError as e:
@@ -59,7 +60,7 @@ def generate_document(template_file, data, doc_type):
         with tempfile.TemporaryDirectory() as temp_dir:
             pdf_filename = convert_to(temp_dir, temp_docx_path)
             if pdf_filename:
-                pdf_path = os.path.join(temp_dir, pdf_filename)  
+                pdf_path = os.path.join(temp_dir, pdf_filename)
                 with open(pdf_path, 'rb') as pdf_file:
                     pdf_io = BytesIO(pdf_file.read())
                 pdf_io.seek(0)
@@ -72,19 +73,32 @@ def generate_document(template_file, data, doc_type):
 @app.route('/generate-docx', methods=['POST'])
 def generate_docx():
     try:
-        if 'template' not in request.files:
-            return jsonify({"error": "Template file is required."}), 400
-        template_file = request.files['template']
+        template_file = None
+        if 'template' in request.files:
+            template_file = request.files['template']
+        elif request.is_json: 
+            json_data = request.get_json()
+            base64_template = json_data.get('template')
+            if base64_template:
+                template_bytes = base64.b64decode(base64_template)
+                template_file = BytesIO(template_bytes)  
+            else:
+                return jsonify({"error": "Base64-encoded template is required in the JSON body."}), 400
 
-        if 'data' in request.files: 
+        if not template_file:
+            return jsonify({"error": "Template file is required."}), 400
+
+        if 'data' in request.files:
             json_data_file = request.files['data']
             data = json.load(json_data_file)
+        elif request.is_json and 'data' in json_data:  
+            data = json_data.get('data')
         elif 'data' in request.form:  
-            data = json.loads(request.form['data'])  
+            data = json.loads(request.form['data'])
         else:
             return jsonify({"error": "JSON data (either as file or raw JSON in form data) is required."}), 400
 
-        doc_type = request.form.get('doc_type')
+        doc_type = request.form.get('doc_type') if not request.is_json else json_data.get('doc_type')
         if not doc_type:
             return jsonify({"error": "Document type is required."}), 400
 
