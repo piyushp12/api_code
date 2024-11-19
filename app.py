@@ -37,20 +37,64 @@ def libreoffice_exec():
         return r'C:\Program Files\LibreOffice\program\soffice.exe' 
     return 'libreoffice'
 
+def add_placeholders(doc, data, parent_key=None, processed_keys=None):
+    """
+    Recursively add placeholders to the DOCX document based on the JSON structure, avoiding duplicate keys.
+    """
+    if processed_keys is None:
+        processed_keys = set() 
+
+    if isinstance(data, dict):
+        if parent_key and parent_key not in processed_keys:
+            doc.add_paragraph(f'{{#{parent_key}}}')  
+            processed_keys.add(parent_key)
+
+        for key, value in data.items():
+            if key in processed_keys:
+                continue  
+
+            if isinstance(value, (dict, list)):  
+                add_placeholders(doc, value, key, processed_keys)
+            else:  # Primitive value
+                doc.add_paragraph(f'{{{key}}}')
+                processed_keys.add(key)
+
+        if parent_key:
+            doc.add_paragraph(f'{{/{parent_key}}}')  
+    elif isinstance(data, list):
+        if parent_key and parent_key not in processed_keys:
+            doc.add_paragraph(f'{{#{parent_key}}}')  
+            processed_keys.add(parent_key)
+
+        for item in data:
+            add_placeholders(doc, item, None, processed_keys)
+
+        if parent_key:
+            doc.add_paragraph(f'{{/{parent_key}}}')  
+
 def generate_document(template_file, data, doc_type):
-    validate_template(template_file)
+    """
+    Generate document based on the provided template or create a new one dynamically from JSON.
+    """
+    if template_file:
+        validate_template(template_file)
+        template = DocxTemplate(template_file)
+        try:
+            template.render(data)
+        except jinja2.TemplateSyntaxError as e:
+            raise ValueError(f"Template syntax error: {e.message}")
+        except jinja2.UndefinedError as e:
+            raise ValueError(f"Template error: Undefined variable encountered - {e.message}")
 
-    template = DocxTemplate(template_file)
-    try:
-        template.render(data)
-    except jinja2.TemplateSyntaxError as e:
-        raise ValueError(f"Template syntax error: {e.message}")
-    except jinja2.UndefinedError as e:
-        raise ValueError(f"Template error: Undefined variable encountered - {e.message}")
-
-    output = BytesIO()
-    template.save(output)
-    output.seek(0)
+        output = BytesIO()
+        template.save(output)
+        output.seek(0)
+    else:
+        doc = Document()
+        add_placeholders(doc, data)
+        output = BytesIO()
+        doc.save(output)
+        output.seek(0)
 
     if doc_type.lower() == 'pdf':
         with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as temp_docx_file:
@@ -74,26 +118,24 @@ def generate_document(template_file, data, doc_type):
 def generate_docx():
     try:
         template_file = None
+        json_data = None
+
         if 'template' in request.files:
             template_file = request.files['template']
-        elif request.is_json: 
+            print("template_file",template_file)
+        elif request.is_json:
             json_data = request.get_json()
             base64_template = json_data.get('template')
             if base64_template:
                 template_bytes = base64.b64decode(base64_template)
-                template_file = BytesIO(template_bytes)  
-            else:
-                return jsonify({"error": "Base64-encoded template is required in the JSON body."}), 400
-
-        if not template_file:
-            return jsonify({"error": "Template file is required."}), 400
+                template_file = BytesIO(template_bytes)
 
         if 'data' in request.files:
             json_data_file = request.files['data']
             data = json.load(json_data_file)
-        elif request.is_json and 'data' in json_data:  
-            data = json_data.get('data')
-        elif 'data' in request.form:  
+        elif json_data and 'data' in json_data:
+            data = json_data['data']
+        elif 'data' in request.form:
             data = json.loads(request.form['data'])
         else:
             return jsonify({"error": "JSON data (either as file or raw JSON in form data) is required."}), 400
