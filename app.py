@@ -15,64 +15,6 @@ import base64
 app = Flask(__name__)
 CORS(app)
 
-text_values = []
-dynamic_placeholder_map = {}
-
-def extract_text_from_docx(doc_file):
-    global text_values
-    doc = Document(doc_file)
-    for paragraph in doc.paragraphs:
-        if "{" in paragraph.text:
-            text_values.append(paragraph.text)
-    for table in doc.tables:
-        for row in table.rows:
-            for cell in row.cells:
-                if "{" in cell.text:
-                    text_values.append(cell.text)
-    return text_values
-
-def create_dynamic_placeholder_map():
-    global dynamic_placeholder_map
-    coupon = 97
-    for ind in range(0, len(text_values)):
-        if "\n" in text_values[ind]:
-            key = text_values[ind].split("\n")[0][2:-1]
-            dynamic_placeholder_map[key] = "{% for " + chr(coupon) + " in " + chr(coupon - 1) + "." + key + " %}\n{{" + chr(coupon) + ".emp_id}}"
-            coupon += 1
-        elif "#" in text_values[ind]:
-            dynamic_placeholder_map[text_values[ind][2:-1]] = "{% for " + chr(coupon) + " in " + text_values[ind][2:-1] + " %}"
-            coupon += 1
-        elif "/" in text_values[ind]:
-            dynamic_placeholder_map['endfor'] = "{% endfor %}"
-        elif "{" in text_values[ind]:
-            key = text_values[ind][1:-1]
-            dynamic_placeholder_map[key] = "{{" + chr(coupon - 1) + ".{}".format(key) + "}}"
-
-def replace_placeholders(doc, dynamic_map):
-    for paragraph in doc.paragraphs:
-        for placeholder, replacement in dynamic_map.items():
-            if "/" in paragraph.text:
-                paragraph.text = paragraph.text.replace(paragraph.text, "{% endfor %}")
-            elif placeholder in paragraph.text:
-                paragraph.text = paragraph.text.replace(paragraph.text, replacement)
-    for table in doc.tables:
-        for row in table.rows:
-            for cell in row.cells:
-                for paragraph in cell.paragraphs:
-                    for placeholder, replacement in dynamic_map.items():
-                        if "/" in paragraph.text:
-                            paragraph.text = paragraph.text.replace(paragraph.text, "{% endfor %}")
-                        elif placeholder in paragraph.text:
-                            paragraph.text = paragraph.text.replace(paragraph.text, replacement)
-
-def process_template(input_file, output_file):
-    extract_text_from_docx(input_file)
-    create_dynamic_placeholder_map()
-    doc = Document(input_file)
-    replace_placeholders(doc, dynamic_placeholder_map)
-    doc.save(output_file)
-    print(f"Template successfully processed and saved to {output_file}")
-
 def validate_template(template_path):
     doc = Document(template_path)
     template_content = "\n".join([p.text for p in doc.paragraphs])
@@ -80,7 +22,7 @@ def validate_template(template_path):
     for_loops = re.findall(r'{%\s*for\b', template_content)
     end_for_loops = re.findall(r'{%\s*endfor\b', template_content)
     if len(for_loops) != len(end_for_loops):
-        raise ValueError("Template syntax error: Mismatched '{% for %}' and '{% endfor %}' tags.")
+        raise ValueError("Incorrect or Missing'{% for %}' loop in template.")
 
 def convert_to(folder, source, timeout=None):
     args = [libreoffice_exec(), '--headless', '--convert-to', 'pdf', '--outdir', folder, source]
@@ -113,7 +55,7 @@ def add_placeholders(doc, data, parent_key=None, processed_keys=None):
 
             if isinstance(value, (dict, list)):  
                 add_placeholders(doc, value, key, processed_keys)
-            else: 
+            else:  # Primitive value
                 doc.add_paragraph(f'{{{key}}}')
                 processed_keys.add(key)
 
@@ -136,18 +78,19 @@ def generate_document(template_file, data, doc_type):
     """
     if template_file:
         validate_template(template_file)
-        process_template(template_file, 'Processed_Template.docx')  
-        template = DocxTemplate('Processed_Template.docx')
+        template = DocxTemplate(template_file)
         try:
             template.render(data)
         except jinja2.TemplateSyntaxError as e:
-            raise ValueError(f"Template syntax error: {e.message}")
+            print("===========>85",e.message)
+            raise ValueError("Missing 'endfor' in template")
         except jinja2.UndefinedError as e:
+            print("===========>87",e.message)
             raise ValueError(f"Template error: Undefined variable encountered - {e.message}")
 
         output = BytesIO()
         template.save(output)
-        output.seek(0)
+        output.seek(0) 
     else:
         doc = Document()
         add_placeholders(doc, data)
@@ -181,7 +124,7 @@ def generate_docx():
 
         if 'template' in request.files:
             template_file = request.files['template']
-            print("template_file", template_file)
+            print("template_file",template_file)
         elif request.is_json:
             json_data = request.get_json()
             base64_template = json_data.get('template')
