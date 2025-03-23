@@ -1,7 +1,9 @@
 import socks
 import socket
-from iso8583 import ISO8583, InvalidIso8583Error, IsoFieldError
+from iso8583 import ISO8583
 
+from iso8583 import *
+# from ISOErrors import *
 def connect_through_socks(proxy_host, proxy_port, target_host, target_port):
     """
     Establish a TCP connection to the target via a SOCKS5 proxy.
@@ -62,6 +64,7 @@ def parse_iso8583_response(response_data):
     return iso_resp
 
 def main():
+    print("dofsddfmkfkmsd")
     # Adjust these parameters:
     proxy_host = '127.0.0.1'     # SOCKS proxy host (Tor default)
     proxy_port = 9050            # SOCKS proxy port (Tor default)
@@ -95,8 +98,8 @@ def main():
 
         sock.close()
     
-    except (socket.error, InvalidIso8583Error, IsoFieldError, ValueError) as e:
+    except (socket.error, ValueError) as e:
         print(f"[!] Error during ISO8583 test: {e}")
 
-if __name__ == '_main_':
+if __name__ == '__main__':
     main()
